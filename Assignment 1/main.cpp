@@ -1,10 +1,11 @@
 #include <iostream>
 #include <cstring>
 #include <fstream>
+#define L cout << file.tellg() << " " << file.tellp() << endl;
 using namespace std;
 
 const short ISBNsiz = 6, stringSiz = 20;
-const char delim = '%' , del = '*';
+const char delim = '%', del = '*';
 
 struct Book
 {
@@ -12,10 +13,16 @@ struct Book
     short titlesiz, authorsiz;
     char* title;
     char* author;
+    ~Book()
+    {
+        delete ISBN;
+        delete title;
+        delete author;
+    }
 };
 
 void addBook(fstream& file);
-void printTitle(fstream& file,string req);
+bool printTitle(fstream& file,string req);
 bool deleteBook (fstream& file);
 bool updateBook (fstream& file);
 int getNext(fstream& file);
@@ -25,10 +32,13 @@ ostream& operator << (ostream& out, const Book& b);
 int main()
 {
     fstream file;
+    ofstream tmpfile;
     string filename;
     cout << "Enter filename : ";
     getline(cin,filename);
-    file.open(filename, ios :: binary | ios :: in | ios :: out);
+    tmpfile.open(filename);
+    tmpfile.close();
+    file.open(filename, ios :: binary | ios :: in | ios :: out | ios :: ate);
 
     if (!file.is_open())
     {
@@ -56,11 +66,13 @@ int main()
         {
             string req;
             cout << "Enter the title : ";
+            cin.ignore();
             getline(cin,req);
-            printTitle(file,req);
+            if(!printTitle(file,req)) cout << "Book is not found\n";
             break;
         }
         case 5 :
+
             printTitle(file,"");
             break;
         default :
@@ -81,7 +93,9 @@ void addBook(fstream& file)
     cout << "Enter ISBN (of 5 characters) : ";
     cin.ignore(INT_MAX,'\n');
     book.ISBN = new char [ISBNsiz];
-    cin.getline(book.ISBN,ISBNsiz);
+    getline(cin,tmp);
+    for (int i = 0 ; i<ISBNsiz-1 ; ++i) book.ISBN[i] = tmp[i];
+    book.ISBN[ISBNsiz-1] = '\0';
     tmp.clear();
 
     cout << "Enter title of the book : ";
@@ -93,19 +107,17 @@ void addBook(fstream& file)
     tmp.clear();
 
     cout << "Enter author of the book : ";
-    //cin.ignore(INT_MAX,'\n');
     getline(cin,tmp);
     book.authorsiz = tmp.size()+1;
     book.author = new char [book.authorsiz];
     strcpy(book.author,tmp.c_str());
 
     file.seekp(0,ios::end);
-    file.seekg(0,ios::end);
     file.write((char*)&ISBNsiz,sizeof(ISBNsiz));
-    file.write(book.ISBN , ISBNsiz);
+    file.write(book.ISBN, ISBNsiz);
     file.write((char*) &book.titlesiz,sizeof(book.titlesiz));
     file.write (book.title,book.titlesiz);
-    file.write((char*) &book.authorsiz , sizeof(book.authorsiz));
+    file.write((char*) &book.authorsiz, sizeof(book.authorsiz));
     file.write (book.author,book.authorsiz);
 
     file.write(&delim,1);
@@ -113,12 +125,19 @@ void addBook(fstream& file)
 
 int getNext(fstream& file, Book& b)  // reads the current book and returns the idx of the next
 {
+
     short isbns = 1234 ;
     char d;
-    if (file.eof()) return -1;
-    file.read((char*)&isbns , sizeof(isbns));
+    if (file.peek() == EOF)
+    {
+        file.clear();
+        return -1;
+    }
+
+    file.read((char*)&isbns, sizeof(isbns));
     b.ISBN = new char [ISBNsiz];
     file.read (b.ISBN,isbns);
+    /**/if (file.fail()) return -1;
     file.read ((char*)&b.titlesiz,sizeof (b.titlesiz));
     b.title = new char [b.titlesiz];
     file.read (b.title,b.titlesiz);
@@ -127,11 +146,7 @@ int getNext(fstream& file, Book& b)  // reads the current book and returns the i
     file.read (b.author,b.authorsiz);
     file.read (&d, 1);
 
-    if (b.ISBN[0] == del) return -2;
     if (file.fail()) return -1;
-   // file.ignore(INT_MAX,'%');
-    /*file.getline(bufsiz,INT_MAX,delim);
-    if (file.eof()) return -1;*/
 
     return file.tellp();
 }
@@ -142,54 +157,66 @@ bool deleteBook (fstream& file)
 
     string req;
     cout << "Enter ISBN : ";
-    cin >> req;
 
+    cin >> req;
     file.seekp(0);
-    file.seekg(0);
+     if (file.peek() == EOF || req.size() != ISBNsiz-1)
+    {
+        file.clear();
+        return 0;
+    }
 
     while (curr != -1)
     {
         nxt = getNext(file,curbook);
-
-        if (curbook.ISBN[0] == del) continue;
         if (curbook.ISBN == req)
         {
             file.seekp(curr,ios::beg);
-            file.seekp(sizeof(ISBNsiz) , ios :: cur);
-            file.write(&del , 1);
+            cout << sizeof (ISBNsiz) << endl;
+            file.seekp(sizeof(ISBNsiz), ios :: cur);
+            file.write(&del, 1);
             file.seekp(0);
             return 1;
         }
 
         curr = nxt;
     }
-    //in.clear();
+    return 0;
 }
 bool updateBook(fstream& file)
 {
     if (deleteBook(file))
     {
-        cout << "Enter the data of new book : \n\n";
+        cout << "Enter the data of new book  \n\n";
         addBook(file);
         return 1;
     }
 
     return 0;
 }
-void printTitle(fstream& file, string req)
+bool printTitle(fstream& file, string req)
 {
+    bool ret = 0;
     Book cur;
     file.seekp(0);
-    file.seekg(0);
+    int f = file.peek();
+    if (file.peek() == EOF)
+    {
+        file.clear();
+        return 0;
+    }
     int n = getNext(file,cur);
-
     do
     {
-        if (n!=-2 && (cur.title == req || !req.size())) cout << cur << "\n\n";
+        if (cur.ISBN[0] != del && (cur.title == req || !req.size()))
+        {
+            ret = 1;
+            cout << cur << "\n\n";
+        }
         n = getNext(file,cur);
     }
     while(n != -1);
-
+    return ret;
 }
 
 ostream& operator << (ostream& out, const Book& b)
