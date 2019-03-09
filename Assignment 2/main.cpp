@@ -11,10 +11,10 @@ struct Book {
 };
 
 const int RECORD_SIZE =
-	SZB::ISBN +
-	SZB::title + SZB::author +
-	SZB::price +
-	SZB::publishYear + SZB::nPages;
+SZB::ISBN +
+SZB::title + SZB::author +
+SZB::price +
+SZB::publishYear + SZB::nPages;
 
 const int OPEN_MODE = ios::in | ios::out | ios::ate | ios::binary;
 
@@ -26,6 +26,7 @@ void DeleteBookUtil(fstream& file);
 void UpdateBookUtil(fstream& file);
 void PrintBookUtil(fstream& file);
 void PrintAllUtil(fstream& file);
+void CompactFileUtil(fstream& file);
 
 int getNum(int s, int e);
 int main() {
@@ -40,7 +41,7 @@ int main() {
 	file.seekg(0, ios::end);
 	if (file.tellg() == 0) {
 		file.seekp(0);
-		int head = -1;
+		short head = -1;
 		file.write((char*)&head, sizeof head);
 	}
 	cout << "Files: Assignment 2 - by Ahmed Dardery - Belal Hamdy\n";
@@ -53,8 +54,9 @@ int main() {
 			"3 - Update book\n" <<
 			"4 - Print book\n" <<
 			"5 - Print all books\n" <<
+			"6 - Compact File\n" <<
 			"0 - Exit\n";
-		int c = getNum(0, 5);
+		int c = getNum(0, 6);
 		cin.ignore(INT_MAX, '\n');
 
 		switch (c) {
@@ -72,6 +74,9 @@ int main() {
 			break;
 		case 5:
 			PrintAllUtil(file);
+			break;
+		case 6:
+			CompactFileUtil(file);
 			break;
 		case 0:
 			file.close();
@@ -114,7 +119,7 @@ void printBook(const Book& b) {
 	cout << "----------------\n";
 }
 
-void writeRecord(fstream & file, const Book & b){
+void writeRecord(fstream & file, const Book & b) {
 	file.write(b.ISBN, sizeof b.ISBN);
 	file.write(b.title, sizeof b.title);
 	file.write(b.author, sizeof b.author);
@@ -132,8 +137,8 @@ void readRecord(fstream & file, Book & b) {
 }
 
 void deleteRecord(fstream& file) {
-	int pos = file.tellp();
-	int top;
+	short pos = file.tellp() / RECORD_SIZE;
+	short top;
 
 	//read current top and put it in the new position rem data
 	//update the current top to the new postion
@@ -143,7 +148,7 @@ void deleteRecord(fstream& file) {
 	file.seekp(0);
 	file.write((char*)&pos, sizeof pos);
 
-	file.seekp(pos);
+	file.seekp(pos * RECORD_SIZE + sizeof(short));
 	file.put(DELETE_MARK);
 	file.write((char*)&top, sizeof top);
 
@@ -151,9 +156,9 @@ void deleteRecord(fstream& file) {
 
 //Seeks to the top of the deleted stack, or to the end of the file if
 //it is empty
-void seekAddRecord(fstream & file){
+void seekAddRecord(fstream & file) {
 	file.seekg(0);
-	int top, pos;
+	short top, pos;
 	//get the position of the last deleted record
 	file.read((char*)&top, sizeof top);
 
@@ -166,11 +171,11 @@ void seekAddRecord(fstream & file){
 	//as the new top
 
 	//tl;dr: remove the top from the stack
-	pos = top;
+	pos = top * RECORD_SIZE + sizeof(short);
 	file.seekg(pos);
 	assert(file.get() == DELETE_MARK);
 	file.read((char*)&top, sizeof top);
-	
+
 	file.seekg(0);
 	file.write((char*)&top, sizeof top);
 
@@ -179,7 +184,7 @@ void seekAddRecord(fstream & file){
 
 //Searches for the file by isbn, returns whether it was found or not
 bool seekFindRecord(fstream &file, char isbn[]) {
-	file.seekg(sizeof (int));
+	file.seekg(sizeof(short));
 	char tmp[SZB::ISBN];
 	while (file.peek() != EOF) {
 		file.read(tmp, sizeof tmp);
@@ -197,13 +202,13 @@ bool seekFindRecord(fstream &file, char isbn[]) {
 	return 0;
 }
 
-void AddBookUtil(fstream& file){
+void AddBookUtil(fstream& file) {
 	Book b = getBookFromUser();
 	seekAddRecord(file);
 	writeRecord(file, b);
 }
 
-void DeleteBookUtil(fstream& file){
+void DeleteBookUtil(fstream& file) {
 	char ISBN[6];
 	cout << "Enter ISBN code (5 characters):\n";
 	cin.getline(ISBN, sizeof ISBN);
@@ -216,7 +221,7 @@ void DeleteBookUtil(fstream& file){
 	}
 }
 
-void UpdateBookUtil(fstream& file){
+void UpdateBookUtil(fstream& file) {
 	char ISBN[6];
 	cout << "Enter ISBN code (5 characters):\n";
 	cin.getline(ISBN, sizeof ISBN);
@@ -230,7 +235,7 @@ void UpdateBookUtil(fstream& file){
 	}
 }
 
-void PrintBookUtil(fstream& file){
+void PrintBookUtil(fstream& file) {
 	char ISBN[6];
 	cout << "Enter ISBN code (5 characters):\n";
 	cin.getline(ISBN, sizeof ISBN);
@@ -245,8 +250,8 @@ void PrintBookUtil(fstream& file){
 	}
 }
 
-void PrintAllUtil(fstream& file){
-	file.seekg(sizeof(int));
+void PrintAllUtil(fstream& file) {
+	file.seekg(sizeof(short));
 	//cerr << file.tellg();
 	Book b;
 	while (file.peek() != EOF) {
@@ -257,10 +262,30 @@ void PrintAllUtil(fstream& file){
 	file.clear();
 }
 
+void CompactFileUtil(fstream & file){
+	file.seekg(sizeof(short));
+	vector<Book> books;
+	Book b;
+	while (!file.eof()) {
+		readRecord(file, b);
+		if (b.ISBN[0] != DELETE_MARK)
+			books.push_back(b);
+			
+		file.peek();
+	}
+	file.close();
+	file.open(FILE_NAME, ios::in | ios::out | ios::trunc | ios::binary);
+	short avail = -1;
+	file.write((char*)&avail, sizeof avail);
+	for (Book b : books) {
+		writeRecord(file, b);
+	}
+}
+
 //gets number from user, forces it to be between s and e
 int getNum(int s, int e)
 {
-	
+
 	int n;
 	while (true)
 	{
